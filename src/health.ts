@@ -10,10 +10,14 @@ const WINDOW_MS = 60_000;
 const ERROR_RATE_THRESHOLD = 0.1; // 10 %
 const MIN_SAMPLES_FOR_DEGRADED = 5;
 
-export function recordSpan(service: string, isError: boolean): void {
+export function registerService(service: string): void {
   if (!records.has(service)) {
     records.set(service, []);
   }
+}
+
+export function recordSpan(service: string, isError: boolean): void {
+  registerService(service);
   records.get(service)!.push({ ts: Date.now(), isError });
 }
 

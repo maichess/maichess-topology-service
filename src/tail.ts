@@ -1,7 +1,7 @@
 import fs from 'fs';
 import { parseSpanLine, ParsedSpan } from './spans';
 import { addNode, addEdge } from './graph';
-import { recordSpan } from './health';
+import { recordSpan, registerService } from './health';
 
 const SPANS_FILE = process.env.SPANS_FILE ?? '/var/log/otel/spans.jsonl';
 const BOOTSTRAP_LINES = 500;
@@ -12,6 +12,7 @@ function processSpans(spans: ParsedSpan[]): void {
     addNode(span.target);
     addEdge(span.source, span.target);
     recordSpan(span.source, span.status === 'error');
+    registerService(span.target);
   }
 }
 
