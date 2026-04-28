@@ -93,17 +93,29 @@ export function parseSpanLine(line: string): ParsedSpan[] {
         }
 
         if (span.kind === SPAN_KIND_SERVER) {
-          // Skip gRPC server spans — the CLIENT span on the calling service already covers the edge
-          if (getAttr(span.attributes, 'rpc.system') === 'grpc') continue;
+          // rpc.system may not be reliably set by AddAspNetCoreInstrumentation alone.
+          // rpc.service (the proto service path, e.g. "maichess.database.v1.Database") is
+          // always present on gRPC server spans and is a more reliable indicator.
+          const isGrpcSpan =
+            getAttr(span.attributes, 'rpc.system') === 'grpc' ||
+            getAttr(span.attributes, 'rpc.service') !== '';
+          if (isGrpcSpan) continue;
 
-          // HTTP server span: an external REST call came in; represent it as client → this service
+          // Only process HTTP server spans (must have an HTTP method attribute)
           const httpMethod =
             getAttr(span.attributes, 'http.request.method') ||
             getAttr(span.attributes, 'http.method');
+          if (!httpMethod) {
+            console.log(`[spans] SERVER span skipped (no http method) service=${source} kind=${span.kind} attrs=${JSON.stringify(span.attributes?.map(a => a.key))}`);
+            continue;
+          }
+
           const httpRoute = getAttr(span.attributes, 'http.route');
           const rpcMethod = httpMethod && httpRoute
             ? `${httpMethod} ${httpRoute}`
             : httpMethod || getAttr(span.attributes, 'url.path') || '';
+
+          console.log(`[spans] HTTP SERVER span: client → ${source} ${rpcMethod}`);
 
           result.push({
             source: 'client',
