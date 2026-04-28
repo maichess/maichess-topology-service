@@ -26,8 +26,11 @@ bootstrapGraph().then(() => {
 
   setInterval(() => {
     for (const service of getKnownServices()) {
-      const { status, errorRate } = getHealthSnapshot(service);
-      broadcastHealth(service, status, errorRate);
+      getHealthSnapshot(service).then(({ status, errorRate }) => {
+        broadcastHealth(service, status, errorRate);
+      }).catch((err: unknown) => {
+        console.error(`Health check failed for ${service}:`, err);
+      });
     }
   }, 5_000);
 }).catch((err: unknown) => {

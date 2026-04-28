@@ -1,3 +1,5 @@
+import { getContainerRunning } from './docker';
+
 interface SpanRecord {
   ts: number;
   isError: boolean;
@@ -5,6 +7,8 @@ interface SpanRecord {
 
 const records = new Map<string, SpanRecord[]>();
 const WINDOW_MS = 60_000;
+const ERROR_RATE_THRESHOLD = 0.1; // 10 %
+const MIN_SAMPLES_FOR_DEGRADED = 5;
 
 export function recordSpan(service: string, isError: boolean): void {
   if (!records.has(service)) {
@@ -17,22 +21,42 @@ export function getKnownServices(): string[] {
   return Array.from(records.keys());
 }
 
-export function getHealthSnapshot(service: string): {
-  status: 'healthy' | 'degraded' | 'down';
-  errorRate: number;
-} {
+function errorRateInWindow(service: string): { rate: number; samples: number } {
   const now = Date.now();
   const all = records.get(service) ?? [];
   const recent = all.filter(r => now - r.ts < WINDOW_MS);
   records.set(service, recent);
 
-  if (recent.length === 0) {
-    return { status: 'down', errorRate: 0 };
+  if (recent.length === 0) return { rate: 0, samples: 0 };
+  return {
+    rate: recent.filter(r => r.isError).length / recent.length,
+    samples: recent.length,
+  };
+}
+
+export async function getHealthSnapshot(service: string): Promise<{
+  status: 'healthy' | 'degraded' | 'down';
+  errorRate: number;
+}> {
+  const { rate, samples } = errorRateInWindow(service);
+  const elevated = samples >= MIN_SAMPLES_FOR_DEGRADED && rate > ERROR_RATE_THRESHOLD;
+
+  const running = await getContainerRunning(service);
+
+  if (running === null) {
+    // Docker unavailable — default healthy, degrade on errors
+    return {
+      status: elevated ? 'degraded' : 'healthy',
+      errorRate: rate,
+    };
   }
 
-  const errorRate = recent.filter(r => r.isError).length / recent.length;
+  if (!running) {
+    return { status: 'down', errorRate: rate };
+  }
+
   return {
-    status: errorRate > 0 ? 'degraded' : 'healthy',
-    errorRate,
+    status: elevated ? 'degraded' : 'healthy',
+    errorRate: rate,
   };
 }
