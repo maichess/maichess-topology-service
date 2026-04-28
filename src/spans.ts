@@ -10,6 +10,7 @@ export interface ParsedSpan {
   duration: number;
 }
 
+const SPAN_KIND_SERVER = 2;
 const SPAN_KIND_CLIENT = 3;
 const STATUS_CODE_ERROR = 2;
 
@@ -65,29 +66,58 @@ export function parseSpanLine(line: string): ParsedSpan[] {
 
     for (const ss of rs.scopeSpans ?? []) {
       for (const span of ss.spans ?? []) {
-        if (span.kind !== SPAN_KIND_CLIENT) continue;
-
-        const target =
-          getAttr(span.attributes, 'peer.service') ||
-          getAttr(span.attributes, 'net.peer.name') ||
-          getAttr(span.attributes, 'server.address');
-        if (!target) continue;
-
         const startNs = BigInt(span.startTimeUnixNano ?? '0');
         const endNs = BigInt(span.endTimeUnixNano ?? '0');
         const duration = Number(endNs - startNs) / 1_000_000;
+        const status = span.status?.code === STATUS_CODE_ERROR ? 'error' : 'ok';
 
-        result.push({
-          source,
-          target,
-          traceId: span.traceId ?? '',
-          spanId: span.spanId ?? '',
-          parentSpanId: span.parentSpanId ?? '',
-          rpcMethod: getAttr(span.attributes, 'rpc.method'),
-          status: span.status?.code === STATUS_CODE_ERROR ? 'error' : 'ok',
-          startTime: Number(startNs) / 1_000_000,
-          duration,
-        });
+        if (span.kind === SPAN_KIND_CLIENT) {
+          const target =
+            getAttr(span.attributes, 'peer.service') ||
+            getAttr(span.attributes, 'net.peer.name') ||
+            getAttr(span.attributes, 'server.address');
+          if (!target) continue;
+
+          result.push({
+            source,
+            target,
+            traceId: span.traceId ?? '',
+            spanId: span.spanId ?? '',
+            parentSpanId: span.parentSpanId ?? '',
+            rpcMethod: getAttr(span.attributes, 'rpc.method'),
+            status,
+            startTime: Number(startNs) / 1_000_000,
+            duration,
+          });
+          continue;
+        }
+
+        if (span.kind === SPAN_KIND_SERVER) {
+          // Skip gRPC server spans — the CLIENT span on the calling service already covers the edge
+          if (getAttr(span.attributes, 'rpc.system') === 'grpc') continue;
+
+          // HTTP server span: an external REST call came in; represent it as client → this service
+          const httpMethod =
+            getAttr(span.attributes, 'http.request.method') ||
+            getAttr(span.attributes, 'http.method');
+          const httpRoute = getAttr(span.attributes, 'http.route');
+          const rpcMethod = httpMethod && httpRoute
+            ? `${httpMethod} ${httpRoute}`
+            : httpMethod || getAttr(span.attributes, 'url.path') || '';
+
+          result.push({
+            source: 'client',
+            target: source,
+            traceId: span.traceId ?? '',
+            spanId: span.spanId ?? '',
+            parentSpanId: span.parentSpanId ?? '',
+            rpcMethod,
+            status,
+            startTime: Number(startNs) / 1_000_000,
+            duration,
+          });
+          continue;
+        }
       }
     }
   }
