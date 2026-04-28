@@ -67,7 +67,9 @@ export function parseSpanLine(line: string): ParsedSpan[] {
       for (const span of ss.spans ?? []) {
         if (span.kind !== SPAN_KIND_CLIENT) continue;
 
-        const target = getAttr(span.attributes, 'peer.service');
+        const target =
+          getAttr(span.attributes, 'peer.service') ||
+          getAttr(span.attributes, 'net.peer.name');
         if (!target) continue;
 
         const startNs = BigInt(span.startTimeUnixNano ?? '0');
