@@ -69,7 +69,8 @@ export function parseSpanLine(line: string): ParsedSpan[] {
 
         const target =
           getAttr(span.attributes, 'peer.service') ||
-          getAttr(span.attributes, 'net.peer.name');
+          getAttr(span.attributes, 'net.peer.name') ||
+          getAttr(span.attributes, 'server.address');
         if (!target) continue;
 
         const startNs = BigInt(span.startTimeUnixNano ?? '0');
