@@ -5,6 +5,7 @@ import { errorMiddleware } from './middleware/error';
 import { createWsServer, broadcastActivity, broadcastHealth } from './ws/server';
 import { bootstrapGraph, startTail } from './tail';
 import { getKnownServices, getHealthSnapshot, registerService } from './health';
+import { startMetricsPoller } from './metrics';
 import { addNode, addEdge } from './graph';
 import { discoverGraphFromDocker } from './docker';
 
@@ -50,7 +51,14 @@ async function startup() {
     broadcastActivity(span);
   });
 
-  // Step 4: Broadcast health every 5 seconds for all known services
+  // Step 4: Poll the OTel collector's Prometheus endpoint for servicegraph metrics.
+  // This discovers edges from all traces regardless of whether CLIENT spans were
+  // emitted by the calling service, complementing the spans.jsonl tail.
+  startMetricsPoller((span) => {
+    broadcastActivity(span);
+  });
+
+  // Step 5: Broadcast health every 5 seconds for all known services
   setInterval(() => {
     for (const service of getKnownServices()) {
       getHealthSnapshot(service)
