@@ -32,7 +32,8 @@ function parseServiceGraphMetrics(text: string): EdgeCounts[] {
     if (!client || !server) continue;
 
     const isFailed = labelValue(line, 'failed') === 'true';
-    const value = Number(line.split(' ').at(-1));
+    const parts = line.split(' ');
+    const value = Number(parts[parts.length - 1]);
     if (isNaN(value)) continue;
 
     const key = `${client}->${server}`;
